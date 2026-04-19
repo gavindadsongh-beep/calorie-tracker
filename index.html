@@ -123,6 +123,17 @@ animation: fadein 0.3s ease;
 @keyframes fadein { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
 
 .hidden { display: none; }
+.history-day { background: #111827; border: 1px solid #1e3a5f; border-radius: 12px; margin-bottom: 14px; overflow: hidden; }
+.history-day-header { display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; cursor: pointer; }
+.history-day-date { font-size: 14px; font-weight: bold; color: #f5f5f0; }
+.history-day-total { font-size: 13px; color: #4a9eff; }
+.history-day-bar { height: 4px; background: #1e3a5f; margin: 0 16px 14px; border-radius: 2px; }
+.history-day-bar-fill { height: 4px; border-radius: 2px; transition: width 0.5s ease; }
+.history-day-meals { padding: 0 16px 14px; display: none; }
+.history-day-meals.open { display: block; }
+.history-slot-label { font-size: 10px; color: #4a9eff; letter-spacing: 2px; text-transform: uppercase; margin: 10px 0 6px; }
+.history-item { display: flex; justify-content: space-between; font-size: 13px; padding: 5px 0; border-bottom: 1px solid #1e3a5f; color: #ccc; }
+.history-item:last-child { border-bottom: none; }
 </style>
 
 </head>
@@ -171,10 +182,11 @@ animation: fadein 0.3s ease;
 </div>
 
 <div class="main">
-  <div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('log')">➕ Add Food</button>
-    <button class="tab-btn inactive" onclick="switchTab('today')">📋 Today</button>
-    <button class="tab-btn inactive" onclick="switchTab('ai')">🤖 Ask AI</button>
+  <div class="tabs" style="flex-wrap:wrap;">
+    <button class="tab-btn active" onclick="switchTab('log')" style="flex:1;min-width:80px;font-size:12px;">➕ Add</button>
+    <button class="tab-btn inactive" onclick="switchTab('today')" style="flex:1;min-width:80px;font-size:12px;">📋 Today</button>
+    <button class="tab-btn inactive" onclick="switchTab('history')" style="flex:1;min-width:80px;font-size:12px;">📅 History</button>
+    <button class="tab-btn inactive" onclick="switchTab('ai')" style="flex:1;min-width:80px;font-size:12px;">🤖 AI</button>
   </div>
 
   <!-- LOG TAB -->
@@ -197,6 +209,12 @@ animation: fadein 0.3s ease;
 
   <div id="tab-today" class="section hidden">
     <div id="today-content"></div>
+  </div>
+
+  <!-- HISTORY TAB -->
+
+  <div id="tab-history" class="section hidden">
+    <div id="history-content"></div>
   </div>
 
   <!-- AI TAB -->
@@ -370,14 +388,76 @@ function renderToday() {
 
 function switchTab(tab) {
   currentTab = tab;
-  ["log", "today", "ai"].forEach(t => {
+  ["log", "today", "history", "ai"].forEach(t => {
     document.getElementById(`tab-${t}`).classList.toggle("hidden", t !== tab);
   });
   document.querySelectorAll(".tab-btn").forEach((btn, i) => {
-    btn.classList.toggle("active", ["log","today","ai"][i] === tab);
-    btn.classList.toggle("inactive", ["log","today","ai"][i] !== tab);
+    btn.classList.toggle("active", ["log","today","history","ai"][i] === tab);
+    btn.classList.toggle("inactive", ["log","today","history","ai"][i] !== tab);
   });
   if (tab === "today") renderToday();
+  if (tab === "history") renderHistory();
+}
+
+function renderHistory() {
+  const container = document.getElementById("history-content");
+  const allDates = [...new Set(meals.map(m => m.date))].filter(d => d !== today()).sort((a, b) => {
+    const parse = d => { const [dd,mm,yyyy] = d.split('/'); return new Date(yyyy,mm-1,dd); };
+    return parse(b) - parse(a);
+  });
+
+  if (allDates.length === 0) {
+    container.innerHTML = `<div class="empty">No previous days recorded yet.<br><span>Come back tomorrow!</span></div>`;
+    return;
+  }
+
+  container.innerHTML = allDates.map((date, idx) => {
+    const dayMeals = meals.filter(m => m.date === date);
+    const total = dayMeals.reduce((s, m) => s + m.calories, 0);
+    const pct = Math.min((total / DAILY_GOAL) * 100, 100);
+    const color = pct >= 100 ? "#ef4444" : pct >= 80 ? "#f59e0b" : "#22c55e";
+    const status = total > DAILY_GOAL ? "⚠️ Over" : total >= 1500 ? "✅ On track" : "⬇️ Under";
+
+    const slotsHtml = MEAL_SLOTS.map(slot => {
+      const items = dayMeals.filter(m => m.meal === slot);
+      if (!items.length) return "";
+      return `
+        <div class="history-slot-label">${slot}</div>
+        ${items.map(i => `
+          <div class="history-item">
+            <span>${i.emoji} ${i.name}</span>
+            <span style="color:#4a9eff">${i.calories} kcal</span>
+          </div>
+        `).join("")}
+      `;
+    }).join("");
+
+    return `
+      <div class="history-day">
+        <div class="history-day-header" onclick="toggleHistory(${idx})">
+          <div>
+            <div class="history-day-date">${date}</div>
+            <div style="font-size:11px;color:#556;margin-top:2px">${status}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="history-day-total">${total} kcal</div>
+            <div style="font-size:11px;color:#556">of ${DAILY_GOAL}</div>
+          </div>
+        </div>
+        <div class="history-day-bar">
+          <div class="history-day-bar-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <div class="history-day-meals" id="history-meals-${idx}">
+          ${slotsHtml}
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function toggleHistory(idx) {
+  const el = document.getElementById(`history-meals-${idx}`);
+  el.classList.toggle("open");
 }
 
 async function askAI() {
